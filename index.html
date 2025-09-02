@@ -176,7 +176,7 @@
       var DELAY_AFTER_FEEDBACK_TO_RETARGETING = 30000; // 30 секунд — после оценки → ретаргетинг
       var FEEDBACK_COOLDOWN = 10 * 60 * 1000; // 10 минут
       var LS_FEEDBACK_KEY = 'mpLastFeedbackTime'; // Время прохождения формы оценки
-      var LS_RETARGETING_DONE_KEY = 'mpLastRetargetingDoneTime'; // Время прохождения ретаргетинга
+      var LS_RETARGETING_DONE_KEY = 'mpLastRetargetingDoneTime'; // Время прохождения формы для ретаргетинга
       var SS_PENDING_REDIRECT_KEY = 'mpPendingRedirectInfo';
       var RETARGETING_GOAL_NAME = 'marketplace_retargeting_yes';
     
@@ -542,33 +542,33 @@
               overlay.remove();
             }, 300);
     
-            // === ЗАПУСКАЕМ ТАЙМЕР НА 30 СЕКУНД ДЛЯ РЕТАРГЕТИНГА ===
+            // === ЗАПУСКАЕМ ТАЙМЕР НА 30 СЕКУНД ДЛЯ Ф. РЕТАРГЕТИНГА ===
             if (retargetingTimerId) {
               clearTimeout(retargetingTimerId);
-              console.log('Предыдущий таймер ретаргетинга отменён.');
+              console.log('Предыдущий таймер формы для ретаргетинга отменён.');
             }
             retargetingTimerId = setTimeout(function() {
-              console.log('Таймер 30 сек (после оценки) завершен. Проверяем, можно ли показать ретаргетинг.');
+              console.log('Таймер 30 сек (после оценки) завершен. Проверяем, можно ли показать форму для ретаргетинга.');
               var now = Date.now();
               var lastRetargetingTimeStr = localStorage.getItem(LS_RETARGETING_DONE_KEY);
               var lastRetargetingTime = lastRetargetingTimeStr ? parseInt(lastRetargetingTimeStr, 10) : 0;
     
               if (now - lastRetargetingTime > FEEDBACK_COOLDOWN) {
                 createRetargetingForm();
-                console.log('Форма ретаргетинга показана (через 30 сек после оценки).');
+                console.log('Форма для ретаргетинга показана (через 30 сек после оценки).');
               } else {
                 var timeLeftMs = FEEDBACK_COOLDOWN - (now - lastRetargetingTime);
                 var minutes = Math.floor(timeLeftMs / 60000);
                 var seconds = Math.floor((timeLeftMs % 60000) / 1000);
                 var timeLeftStr = minutes + ':' + (seconds < 10 ? '0' : '') + seconds;
-                console.log('Cooldown активен. Форма ретаргетинга не показывается. Осталось: ' + timeLeftStr);
+                console.log('Cooldown активен. Форма для ретаргетинга не показывается. Осталось: ' + timeLeftStr);
               }
             }, DELAY_AFTER_FEEDBACK_TO_RETARGETING);
           });
         });
       }
     
-      // === ФОРМА РЕТАРГЕТИНГА (ДА/НЕТ) ===
+      // === ФОРМА ДЛЯ РЕТАРГЕТИНГА (ДА/НЕТ) ===
       function createRetargetingForm() {
         if (document.getElementById('mp-feedback-overlay')) return;
         if (document.getElementById('mp-retargeting-overlay')) return;
@@ -634,7 +634,7 @@
               ym(COUNTER_ID, 'reachGoal', RETARGETING_GOAL_NAME);
               console.log('Цель отправлена: ' + RETARGETING_GOAL_NAME);
             } catch (e) {
-              console.error('Ошибка отправки цели ретаргетинга:', e);
+              console.error('Ошибка отправки цели для ретаргетинга:', e);
             }
           }
     
