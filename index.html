@@ -169,566 +169,586 @@
 
     <!-- Скрипт для маркетплейсов -->
     <script>
-    (function () {
-      // === КОНФИГУРАЦИЯ ===
-      var COUNTER_ID = 103905533; // Счётчик метрики
-      var DELAY_BEFORE_FEEDBACK_FORM = 20000; // 20 секунд — показ формы оценки
-      var DELAY_AFTER_FEEDBACK_TO_RETARGETING = 30000; // 30 секунд — после оценки → ретаргетинг
-      var FEEDBACK_COOLDOWN = 10 * 60 * 1000; // 10 минут
-      var LS_FEEDBACK_KEY = 'mpLastFeedbackTime'; // Время прохождения формы оценки
-      var LS_RETARGETING_DONE_KEY = 'mpLastRetargetingDoneTime'; // Время прохождения формы для ретаргетинга
-      var SS_PENDING_REDIRECT_KEY = 'mpPendingRedirectInfo';
-      var RETARGETING_GOAL_NAME = 'marketplace_retargeting_yes';
-    
-      var lastSliderCompletedMarketplace = null;
-      var redirectGoalTimeoutId = null;
-      var feedbackFormTimeoutId = null;
-      var retargetingTimerId = null;
-    
-      // === ОПРЕДЕЛЕНИЕ МАРКЕТПЛЕЙСА ===
-      function getMarketplaceName(url) {
-        try {
-          var linkHost = new URL(url, window.location.origin).hostname.toLowerCase();
-          var marketplaceMap = {
-            'ozon': ['ozon.ru', 'ozon.kz', 'ozon.by', 'ozon.uz', 'ozon.tj'],
-            'wildberries': ['wildberries.ru', 'wildberries.kz', 'wildberries.by', 'wildberries.uz'],
-            'yandex_market': ['market.yandex.ru', 'market.yandex.kz'],
-            'detmir': ['detmir.ru', 'detmir.kz']
-          };
-          for (var name in marketplaceMap) {
-            var domains = marketplaceMap[name];
-            for (var i = 0; i < domains.length; i++) {
-              if (linkHost.includes(domains[i])) {
-                return name;
-              }
-            }
+(function () {
+  // === КОНФИГУРАЦИЯ ===
+  var COUNTER_ID = 103905533; // Счётчик метрики
+  var DELAY_BEFORE_FEEDBACK_FORM = 20000; // 20 секунд — показ формы оценки
+  var DELAY_AFTER_FEEDBACK_TO_RETARGETING = 30000; // 30 секунд — после оценки → ретаргетинг
+  var FEEDBACK_COOLDOWN = 10 * 60 * 1000; // 10 минут
+  var LS_FEEDBACK_KEY = 'mpLastFeedbackTime'; // Время прохождения формы оценки
+  var LS_RETARGETING_DONE_KEY = 'mpLastRetargetingDoneTime'; // Время прохождения формы для ретаргетинга
+  var SS_PENDING_REDIRECT_KEY = 'mpPendingRedirectInfo';
+  var RETARGETING_GOAL_NAME = 'marketplace_retargeting_yes';
+
+  var lastSliderCompletedMarketplace = null;
+  var redirectGoalTimeoutId = null;
+  var feedbackFormTimeoutId = null;
+  var retargetingTimerId = null;
+
+  // === ПОДКЛЮЧЕНИЕ ШРИФТА MONTSERRAT ===
+  (function() {
+    var link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = 'https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700&display=swap';
+    document.head.appendChild(link);
+  })();
+
+  // === ОПРЕДЕЛЕНИЕ SAFARI (усиленный регэксп) ===
+  function isSafari() {
+    return /^((?!chrome|android|crios|fxios|edgios|yabrowser|yandex|opera|opr|samsung).)*safari/i.test(navigator.userAgent);
+  }
+
+  // === ОПРЕДЕЛЕНИЕ МАРКЕТПЛЕЙСА ===
+  function getMarketplaceName(url) {
+    try {
+      var linkHost = new URL(url, window.location.origin).hostname.toLowerCase();
+      var marketplaceMap = {
+        'ozon': ['ozon.ru', 'ozon.kz', 'ozon.by', 'ozon.uz', 'ozon.tj'],
+        'wildberries': ['wildberries.ru', 'wildberries.kz', 'wildberries.by', 'wildberries.uz'],
+        'yandex_market': ['market.yandex.ru', 'market.yandex.kz'],
+        'detmir': ['detmir.ru', 'detmir.kz']
+      };
+      for (var name in marketplaceMap) {
+        var domains = marketplaceMap[name];
+        for (var i = 0; i < domains.length; i++) {
+          if (linkHost.includes(domains[i])) {
+            return name;
           }
-          return null;
-        } catch (e) {
-          console.warn('Ошибка при определении маркетплейса для URL:', url, e);
-          return null;
         }
       }
-    
-      // === ОТПРАВКА ЦЕЛИ ЧЕРЕЗ 20 СЕК ===
-      function sendDelayedRedirectGoal(marketplaceInfo, isBackupAttempt = false) {
-        if (!marketplaceInfo || !marketplaceInfo.name) {
-          console.warn('Невозможно отправить цель: информация о маркетплейсе отсутствует.');
-          return;
+      return null;
+    } catch (e) {
+      console.warn('Ошибка при определении маркетплейса для URL:', url, e);
+      return null;
+    }
+  }
+
+  // === ОТПРАВКА ЦЕЛИ ЧЕРЕЗ 20 СЕК ===
+  function sendDelayedRedirectGoal(marketplaceInfo, isBackupAttempt = false) {
+    if (!marketplaceInfo || !marketplaceInfo.name) {
+      console.warn('Невозможно отправить цель: информация о маркетплейсе отсутствует.');
+      return;
+    }
+    if (typeof ym !== 'undefined') {
+      try {
+        var redirectSpecificGoal = 'marketplace_redirect_' + marketplaceInfo.name;
+        var redirectSpecificGoal2 = 'marketplace_redirect';
+        ym(COUNTER_ID, 'reachGoal', redirectSpecificGoal);
+        ym(COUNTER_ID, 'reachGoal', redirectSpecificGoal2);  
+        console.log('Цель ОТЛОЖЕННО отправлена: ' + redirectSpecificGoal + redirectSpecificGoal2 + (isBackupAttempt ? ' (подстраховка)' : ''));
+        if (!isBackupAttempt) {
+          try {
+            sessionStorage.removeItem(SS_PENDING_REDIRECT_KEY);
+            console.log('sessionStorage очищен после отправки цели таймером.');
+          } catch (e) {
+            console.warn('Не удалось очистить sessionStorage:', e);
+          }
         }
+      } catch (e) {
+        console.error('Ошибка отправки ОТЛОЖЕННОЙ цели перехода:', e);
+      }
+    } else {
+      console.log('Функция ym не найдена для отправки ОТЛОЖЕННОЙ цели перехода');
+    }
+  }
+
+  // === ПЛАНИРОВАНИЕ ДЕЙСТВИЙ ПОСЛЕ УСПЕШНОГО СЛАЙДЕРА ===
+  function scheduleActionsAfterSlider(marketplaceName, url) {
+    if (!marketplaceName) {
+      console.warn('Невозможно запланировать действия: имя маркетплейса отсутствует.');
+      return;
+    }
+
+    lastSliderCompletedMarketplace = { name: marketplaceName, url: url };
+    console.log('Запомнен последний УСПЕШНЫЙ слайдер на:', marketplaceName);
+
+    try {
+      sessionStorage.setItem(SS_PENDING_REDIRECT_KEY, JSON.stringify(lastSliderCompletedMarketplace));
+      console.log('Информация о слайдере сохранена в sessionStorage.');
+    } catch (e) {
+      console.warn('Не удалось сохранить информацию в sessionStorage:', e);
+    }
+
+    // Только для НЕ-Safari: запускаем таймер цели и формы
+    if (!isSafari()) {
+      if (redirectGoalTimeoutId) {
+        clearTimeout(redirectGoalTimeoutId);
+        console.log('Предыдущий таймер цели отменен.');
+      }
+      redirectGoalTimeoutId = setTimeout(function () {
+        console.log('Таймер 20 сек (цель) завершен. Отправляем цель для:', lastSliderCompletedMarketplace.name);
+        sendDelayedRedirectGoal(lastSliderCompletedMarketplace);
+        redirectGoalTimeoutId = null;
+      }, DELAY_BEFORE_FEEDBACK_FORM);
+      console.log('Таймер 20 сек (цель) запущен/перезапущен.');
+
+      // === ТАЙМЕР: Показать форму оценки (если не в cooldown'е) ===
+      if (feedbackFormTimeoutId) {
+        clearTimeout(feedbackFormTimeoutId);
+        console.log('Предыдущий таймер формы оценки отменен.');
+      }
+      feedbackFormTimeoutId = setTimeout(function () {
+        console.log('Таймер 20 сек (форма оценки) завершен. Проверяем, можно ли показать форму.');
+        var now = Date.now();
+        var lastEvalTimeStr = localStorage.getItem(LS_FEEDBACK_KEY);
+        var lastEvalTime = lastEvalTimeStr ? parseInt(lastEvalTimeStr, 10) : 0;
+
+        if (now - lastEvalTime > FEEDBACK_COOLDOWN) {
+          createMarketplaceFeedbackForm();
+          console.log('Форма оценки показана.');
+        } else {
+          var timeLeftMs = FEEDBACK_COOLDOWN - (now - lastEvalTime);
+          var minutes = Math.floor(timeLeftMs / 60000);
+          var seconds = Math.floor((timeLeftMs % 60000) / 1000);
+          var timeLeftStr = minutes + ':' + (seconds < 10 ? '0' : '') + seconds;
+          console.log('Cooldown активен. Форма оценки не показывается. Осталось: ' + timeLeftStr);
+        }
+      }, DELAY_BEFORE_FEEDBACK_FORM);
+      console.log('Таймер 20 сек (форма оценки) запущен.');
+    }
+  }
+
+  // === ПОКАЗ ОВЕРЛЕЯ СО СЛАЙДЕРОМ ===
+  function showPreRedirectOverlayAndOpenNewTab(url, marketplaceName) {
+    if (document.getElementById('pre-redirect-overlay')) {
+      console.log('Оверлей уже существует, пропускаем создание.');
+      return;
+    }
+
+    var overlay = document.createElement('div');
+    overlay.id = 'pre-redirect-overlay';
+    overlay.style.cssText = [
+      'position:fixed !important','top:0 !important','left:0 !important',
+      'width:100% !important','height:100% !important',
+      'background:rgba(0,0,0,0.6) !important','z-index:2147483647 !important',
+      'display:flex !important','align-items:center !important','justify-content:center !important',
+      'cursor:pointer !important'
+    ].join(';');
+
+    var box = document.createElement('div');
+    box.id = 'redirect-box';
+    box.style.cssText = [
+      'background:white !important','border-radius:16px !important','padding:30px 25px !important',
+      'max-width:90% !important','width:340px !important','text-align:center !important',
+      'box-shadow:0 8px 32px rgba(0,0,0,0.25) !important',"font-family:'Montserrat',sans-serif !important",
+      'position:relative !important', 'cursor:default !important',
+      'z-index:2147483647 !important'
+    ].join(';');
+
+    box.innerHTML =
+      '<div style="font-size:22px;font-weight:700;margin-bottom:15px;color:#000;">' +
+        'Открываем маркетплейс...' +
+      '</div>' +
+      '<div style="font-size:16px;color:#333;margin-bottom:20px;line-height:1.4;">' +
+        'Проведите ползунок вправо<br>' +
+        'для перехода в маркетплейс' +
+      '</div>' +
+      '<div style="font-size:38px;margin-bottom:20px;">&#128722</div>' +
+      '<div id="slider-container" style="width: 100%; height: 50px; background-color: #e0e0e0; border-radius: 25px; position: relative; margin-bottom: 15px; overflow: hidden; touch-action: none;">' +
+        '<div id="slider-track" style="position: absolute; top: 0; left: 0; height: 100%; width: 100%;"></div>' +
+        '<div id="slider-handle" style="position: absolute; top: 5px; left: 5px; width: 40px; height: 40px; background-color: #4285f4; border-radius: 50%; cursor: grab; touch-action: none; display: flex; align-items: center; justify-content: center; color: white; font-size: 20px; user-select: none;">→</div>' +
+        '<div id="slider-text" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #777; pointer-events: none; font-size: 14px;">Проведите вправо</div>' +
+      '</div>' +
+      '<div id="countdown-timer" style="font-size:16px; font-weight:bold; margin-top:10px; display:none;">' +
+        '<div style="margin-bottom:5px; font-size:14px; color:#444;">Вы - не бот, и это прекрасно!</div>' +
+        'Переход через <span id="seconds-left">2</span> сек...' +
+      '</div>';
+
+    overlay.appendChild(box);
+    document.body.insertBefore(overlay, document.body.firstChild);
+
+    function closeOverlay() {
+      document.removeEventListener('keydown', handleKeyDown, true);
+      if (overlay && overlay.parentNode) {
+        overlay.parentNode.removeChild(overlay);
+      }
+    }
+
+    overlay.addEventListener('click', function(e) {
+      if (e.target !== overlay) return;
+      closeOverlay();
+    });
+
+    function handleKeyDown(e) {
+      if (e.key === 'Escape' || e.keyCode === 27) closeOverlay();
+    }
+    document.addEventListener('keydown', handleKeyDown, true);
+
+    var sliderContainer = box.querySelector('#slider-container');
+    var sliderHandle = box.querySelector('#slider-handle');
+    var sliderTrack = box.querySelector('#slider-track');
+    var sliderText = box.querySelector('#slider-text');
+    var countdownTimer = box.querySelector('#countdown-timer');
+    var secondsLeftSpan = box.querySelector('#seconds-left');
+    var isDragging = false;
+    var startX = 0;
+    var startLeft = 0;
+    var maxLeft = sliderContainer.offsetWidth - sliderHandle.offsetWidth - 10;
+
+    function startDrag(e) {
+      isDragging = true;
+      startX = e.type.startsWith('touch') ? e.touches[0].clientX : e.clientX;
+      startLeft = parseInt(sliderHandle.style.left) || 0;
+      sliderHandle.style.cursor = 'grabbing';
+      sliderHandle.style.backgroundColor = '#3367d6';
+      e.preventDefault();
+    }
+
+    function drag(e) {
+      if (!isDragging) return;
+      var currentX = e.type.startsWith('touch') ? e.touches[0].clientX : e.clientX;
+      var diffX = currentX - startX;
+      var newLeft = Math.max(5, Math.min(startLeft + diffX, maxLeft));
+      sliderHandle.style.left = newLeft + 'px';
+      var progress = (newLeft - 5) / maxLeft;
+      sliderTrack.style.background = 'linear-gradient(to right, #a0c3ff ' + (progress * 100) + '%, #e0e0e0 ' + (progress * 100) + '%)';
+      e.preventDefault();
+    }
+
+    function endDrag(e) {
+      if (!isDragging) return;
+      isDragging = false;
+      sliderHandle.style.cursor = 'grab';
+      sliderHandle.style.backgroundColor = '#4285f4';
+      var finalLeft = parseInt(sliderHandle.style.left) || 0;
+
+      if (finalLeft >= maxLeft - 2) {
         if (typeof ym !== 'undefined') {
           try {
-            var redirectSpecificGoal = 'marketplace_redirect_' + marketplaceInfo.name;
-            ym(COUNTER_ID, 'reachGoal', redirectSpecificGoal); // Вызов цели
-            console.log('Цель ОТЛОЖЕННО отправлена: ' + redirectSpecificGoal + (isBackupAttempt ? ' (подстраховка)' : ''));
-            if (!isBackupAttempt) {
-              try {
-                sessionStorage.removeItem(SS_PENDING_REDIRECT_KEY);
-                console.log('sessionStorage очищен после отправки цели таймером.');
-              } catch (e) {
-                console.warn('Не удалось очистить sessionStorage:', e);
-              }
+            ym(COUNTER_ID, 'reachGoal', 'marketplace_slider_success');
+            console.log('Цель отправлена: marketplace_slider_success');
+            if (marketplaceName) {
+              var specificGoalName = 'marketplace_slider_success_' + marketplaceName;
+              ym(COUNTER_ID, 'reachGoal', specificGoalName);
+              console.log('Цель отправлена: ' + specificGoalName);
             }
-          } catch (e) {
-            console.error('Ошибка отправки ОТЛОЖЕННОЙ цели перехода:', e);
+          } catch (err) {
+            console.error('Ошибка отправки цели (слайдер):', err);
           }
-        } else {
-          console.log('Функция ym не найдена для отправки ОТЛОЖЕННОЙ цели перехода');
         }
+
+        scheduleActionsAfterSlider(marketplaceName, url);
+
+        sliderHandle.style.pointerEvents = 'none';
+        sliderText.textContent = 'Готово!';
+        countdownTimer.style.display = 'block';
+        startCountdownAndRedirect(url, overlay, marketplaceName, 2);
+      } else {
+        sliderHandle.style.transition = 'left 0.3s ease';
+        sliderHandle.style.left = '5px';
+        sliderTrack.style.background = '#e0e0e0';
+        setTimeout(() => {
+          sliderHandle.style.transition = '';
+        }, 300);
       }
-    
-      // === ПЛАНИРОВАНИЕ ДЕЙСТВИЙ ПОСЛЕ УСПЕШНОГО СЛАЙДЕРА ===
-      function scheduleActionsAfterSlider(marketplaceName, url) {
-        if (!marketplaceName) {
-          console.warn('Невозможно запланировать действия: имя маркетплейса отсутствует.');
-          return;
+    }
+
+    sliderHandle.addEventListener('mousedown', startDrag);
+    sliderHandle.addEventListener('touchstart', startDrag, { passive: false });
+    document.addEventListener('mousemove', drag);
+    document.addEventListener('touchmove', drag, { passive: false });
+    document.addEventListener('mouseup', endDrag);
+    document.addEventListener('touchend', endDrag);
+
+    if (typeof ym !== 'undefined') {
+      try {
+        if (marketplaceName) {
+          var redirectSpecificGoal = 'marketplace_redirect_' + marketplaceName;
+          var redirectSpecificGoal2 = 'marketplace_redirect';  
+          console.log('Цель запомнена: ' + redirectSpecificGoal + redirectSpecificGoal2 + ' (попытка)');
         }
-    
-        lastSliderCompletedMarketplace = { name: marketplaceName, url: url };
-        console.log('Запомнен последний УСПЕШНЫЙ слайдер на:', marketplaceName);
-    
+      } catch (e) {
+        console.error('Ошибка отправки цели попытки перехода:', e);
+      }
+    }
+  }
+
+  // === ОБРАТНЫЙ ОТСЧЁТ И ПЕРЕХОД ===
+  function startCountdownAndRedirect(url, overlay, marketplaceName, seconds) {
+    var secondsLeft = seconds;
+    var secondsLeftSpan = overlay.querySelector('#seconds-left');
+    function updateTimer() {
+      if (secondsLeftSpan) secondsLeftSpan.textContent = secondsLeft;
+      if (secondsLeft <= 0) {
+        window.open(url, '_blank');
+        if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      } else {
+        secondsLeft--;
+        setTimeout(updateTimer, 1000);
+      }
+    }
+    updateTimer();
+  }
+
+  // === ФОРМА ОЦЕНКИ (1-5) ===
+  function createMarketplaceFeedbackForm() {
+    if (document.getElementById('mp-feedback-overlay')) return;
+    if (document.getElementById('mp-retargeting-overlay')) return;
+
+    var overlay = document.createElement('div');
+    overlay.id = 'mp-feedback-overlay';
+    overlay.style.cssText = [
+      'position:fixed !important','top:0 !important','left:0 !important',
+      'width:100% !important','height:100% !important',
+      'background:rgba(0,0,0,0.4) !important','z-index:2147483646 !important',
+      'opacity:0 !important','transition:opacity .3s ease !important'
+    ].join(';');
+    document.body.appendChild(overlay);
+
+    var form = document.createElement('div');
+    form.id = 'mp-feedback-popup';
+    form.style.cssText = [
+      'position:fixed !important','top:50% !important','left:50% !important','transform:translate(-50%,-50%) !important',
+      'background:linear-gradient(to bottom, #fff, #f7faff) !important',
+      'border:2px solid #4285f4 !important','border-radius:16px !important',
+      'padding:30px 25px !important','box-shadow:0 10px 30px rgba(0,0,0,.3) !important',
+      'z-index:2147483647 !important',"font-family:'Montserrat',sans-serif !important",
+      'max-width:95% !important','width:320px !important','opacity:0 !important','transition:opacity .5s ease !important',
+      'text-align:center !important'
+    ].join(';');
+
+    var inner = ''
+      + '<div style="font-size:24px;margin-bottom:15px;">&#128722</div>'
+      + '<div style="margin-bottom:10px;font-size:18px;font-weight:600;color:#000;">'
+      + 'Удалось ли вам оформить заказ?'
+      + '</div>'
+      + '<div style="margin-bottom:20px;font-size:14px;color:#555;">'
+      + 'Оцените ваш опыт покупки по 5-бальной шкале'
+      + '</div>'
+      + '<div id="mp-rating-buttons" style="display:flex;gap:12px;justify-content:center;">';
+
+    for (var i = 1; i <= 5; i++) {
+      inner += '<button data-score="' + i + '"'
+        + ' style="padding:10px 16px;border-radius:10px;'
+        + 'border:2px solid #4285f4;background:#fff;color:#4285f4;'
+        + 'font-weight:700;font-size:16px;cursor:pointer;transition:.3s;">'
+        + i + '</button>';
+    }
+    inner += '</div>';
+    form.innerHTML = inner;
+    document.body.appendChild(form);
+
+    setTimeout(function () {
+      overlay.style.opacity = '1';
+      form.style.opacity = '1';
+    }, 50);
+
+    var buttons = form.querySelectorAll('#mp-rating-buttons button');
+    buttons.forEach(function(button) {
+      button.addEventListener('click', function () {
+        var score = parseInt(this.getAttribute('data-score'), 10);
+        if (typeof ym !== 'undefined') {
+          try {
+            ym(COUNTER_ID, 'reachGoal', 'marketplace_feedback', { score: score });
+            console.log('Цель отправлена: marketplace_feedback, оценка: ' + score);
+          } catch (e) {
+            console.error('Ошибка отправки цели:', e);
+          }
+        }
+
         try {
-          sessionStorage.setItem(SS_PENDING_REDIRECT_KEY, JSON.stringify(lastSliderCompletedMarketplace));
-          console.log('Информация о слайдере сохранена в sessionStorage.');
+          localStorage.setItem(LS_FEEDBACK_KEY, Date.now().toString());
+          console.log('Время оценки записано в localStorage.');
         } catch (e) {
-          console.warn('Не удалось сохранить информацию в sessionStorage:', e);
+          console.error('Ошибка записи в localStorage:', e);
         }
-    
-        // Сброс предыдущих таймеров
-        if (redirectGoalTimeoutId) {
-          clearTimeout(redirectGoalTimeoutId);
-          console.log('Предыдущий таймер цели отменен.');
+
+        form.style.opacity = '0';
+        overlay.style.opacity = '0';
+        setTimeout(function () {
+          form.remove();
+          overlay.remove();
+        }, 300);
+
+        // === ЗАПУСКАЕМ ТАЙМЕР НА 30 СЕКУНД ДЛЯ Ф. РЕТАРГЕТИНГА ===
+        if (retargetingTimerId) {
+          clearTimeout(retargetingTimerId);
+          console.log('Предыдущий таймер формы для ретаргетинга отменён.');
         }
-        redirectGoalTimeoutId = setTimeout(function () {
-          console.log('Таймер 20 сек (цель) завершен. Отправляем цель для:', lastSliderCompletedMarketplace.name);
-          sendDelayedRedirectGoal(lastSliderCompletedMarketplace);
-          redirectGoalTimeoutId = null;
-        }, DELAY_BEFORE_FEEDBACK_FORM);
-        console.log('Таймер 20 сек (цель) запущен/перезапущен.');
-    
-        // === ТАЙМЕР: Показать форму оценки (если не в cooldown'е) ===
-        if (feedbackFormTimeoutId) {
-          clearTimeout(feedbackFormTimeoutId);
-          console.log('Предыдущий таймер формы оценки отменен.');
-        }
-        feedbackFormTimeoutId = setTimeout(function () {
-          console.log('Таймер 20 сек (форма оценки) завершен. Проверяем, можно ли показать форму.');
+        retargetingTimerId = setTimeout(function() {
+          console.log('Таймер 30 сек (после оценки) завершен. Проверяем, можно ли показать форму для ретаргетинга.');
           var now = Date.now();
-          var lastEvalTimeStr = localStorage.getItem(LS_FEEDBACK_KEY);
-          var lastEvalTime = lastEvalTimeStr ? parseInt(lastEvalTimeStr, 10) : 0;
-    
-          if (now - lastEvalTime > FEEDBACK_COOLDOWN) {
-            createMarketplaceFeedbackForm();
-            console.log('Форма оценки показана.');
+          var lastRetargetingTimeStr = localStorage.getItem(LS_RETARGETING_DONE_KEY);
+          var lastRetargetingTime = lastRetargetingTimeStr ? parseInt(lastRetargetingTimeStr, 10) : 0;
+
+          if (now - lastRetargetingTime > FEEDBACK_COOLDOWN) {
+            createRetargetingForm();
+            console.log('Форма для ретаргетинга показана (через 30 сек после оценки).');
           } else {
-            var timeLeftMs = FEEDBACK_COOLDOWN - (now - lastEvalTime);
+            var timeLeftMs = FEEDBACK_COOLDOWN - (now - lastRetargetingTime);
             var minutes = Math.floor(timeLeftMs / 60000);
             var seconds = Math.floor((timeLeftMs % 60000) / 1000);
             var timeLeftStr = minutes + ':' + (seconds < 10 ? '0' : '') + seconds;
-            console.log('Cooldown активен. Форма оценки не показывается. Осталось: ' + timeLeftStr);
+            console.log('Cooldown активен. Форма для ретаргетинга не показывается. Осталось: ' + timeLeftStr);
           }
-        }, DELAY_BEFORE_FEEDBACK_FORM);
-        console.log('Таймер 20 сек (форма оценки) запущен.');
+        }, DELAY_AFTER_FEEDBACK_TO_RETARGETING);
+      });
+    });
+  }
+
+  // === ФОРМА ДЛЯ РЕТАРГЕТИНГА (ДА/НЕТ) ===
+  function createRetargetingForm() {
+    if (document.getElementById('mp-feedback-overlay')) return;
+    if (document.getElementById('mp-retargeting-overlay')) return;
+
+    var overlay = document.createElement('div');
+    overlay.id = 'mp-retargeting-overlay';
+    overlay.style.cssText = [
+      'position:fixed !important','top:0 !important','left:0 !important',
+      'width:100% !important','height:100% !important',
+      'background:rgba(0,0,0,0.4) !important','z-index:2147483646 !important',
+      'opacity:0 !important','transition:opacity .3s ease !important'
+    ].join(';');
+    document.body.appendChild(overlay);
+
+    var form = document.createElement('div');
+    form.id = 'mp-retargeting-popup';
+    form.style.cssText = [
+      'position:fixed !important','top:50% !important','left:50% !important','transform:translate(-50%,-50%) !important',
+      'background:linear-gradient(to bottom, #fff, #f0f8ff) !important',
+      'border:2px solid #4285f4 !important','border-radius:16px !important',
+      'padding:30px 25px !important','box-shadow:0 10px 30px rgba(0,0,0,.3) !important',
+      'z-index:2147483647 !important',"font-family:'Montserrat',sans-serif !important",
+      'max-width:95% !important','width:320px !important','opacity:0 !important','transition:opacity .5s ease !important',
+      'text-align:center !important'
+    ].join(';');
+
+    var inner = ''
+      + '<div style="font-size:24px;margin-bottom:15px;">🛒</div>'
+      + '<div style="margin-bottom:10px;font-size:18px;font-weight:600;color:#000;">'
+      + 'Будете ли ещё заказывать у нас?'
+      + '</div>'
+      + '<div style="margin-bottom:20px;font-size:14px;color:#555;">'
+      + 'Ваш ответ поможет нам стать лучше!'
+      + '</div>'
+      + '<div id="mp-retargeting-buttons" style="display:flex;gap:12px;justify-content:center;">'
+      + '<button id="retargeting-yes" style="padding:10px 16px;border-radius:10px;border:2px solid #4285f4;background:#fff;color:#4285f4;font-weight:700;font-size:16px;cursor:pointer;transition:.3s;">Да</button>'
+      + '<button id="retargeting-no" style="padding:10px 16px;border-radius:10px;border:2px solid #ccc;background:#fff;color:#999;font-weight:700;font-size:16px;cursor:pointer;transition:.3s;">Нет</button>'
+      + '</div>';
+
+    form.innerHTML = inner;
+    document.body.appendChild(form);
+
+    setTimeout(function () {
+      overlay.style.opacity = '1';
+      form.style.opacity = '1';
+    }, 50);
+
+    var yesButton = form.querySelector('#retargeting-yes');
+    var noButton = form.querySelector('#retargeting-no');
+
+    function closeForm() {
+      form.style.opacity = '0';
+      overlay.style.opacity = '0';
+      setTimeout(function () {
+        if (form && form.parentNode) form.remove();
+        if (overlay && overlay.parentNode) overlay.remove();
+      }, 300);
+    }
+
+    yesButton.addEventListener('click', function() {
+      if (typeof ym !== 'undefined') {
+        try {
+          ym(COUNTER_ID, 'reachGoal', RETARGETING_GOAL_NAME);
+          console.log('Цель отправлена: ' + RETARGETING_GOAL_NAME);
+        } catch (e) {
+          console.error('Ошибка отправки цели для ретаргетинга:', e);
+        }
       }
-    
-      // === ПОКАЗ ОВЕРЛЕЯ СО СЛАЙДЕРОМ ===
-      function showPreRedirectOverlayAndOpenNewTab(url, marketplaceName) {
-        if (document.getElementById('pre-redirect-overlay')) {
-          console.log('Оверлей уже существует, пропускаем создание.');
-          return;
-        }
-    
-        var overlay = document.createElement('div');
-        overlay.id = 'pre-redirect-overlay';
-        overlay.style.cssText = [
-          'position:fixed !important','top:0 !important','left:0 !important',
-          'width:100% !important','height:100% !important',
-          'background:rgba(0,0,0,0.6) !important','z-index:2147483647 !important',
-          'display:flex !important','align-items:center !important','justify-content:center !important',
-          'cursor:pointer !important'
-        ].join(';');
-    
-        var box = document.createElement('div');
-        box.id = 'redirect-box';
-        box.style.cssText = [
-          'background:white !important','border-radius:16px !important','padding:30px 25px !important',
-          'max-width:90% !important','width:340px !important','text-align:center !important',
-          'box-shadow:0 8px 32px rgba(0,0,0,0.25) !important','font-family:sans-serif !important',
-          'position:relative !important', 'cursor:default !important',
-          'z-index:2147483647 !important'
-        ].join(';');
-    
-        box.innerHTML =
-          '<div style="font-size:22px;font-weight:700;margin-bottom:15px;">' +
-            'Открываем маркетплейс...' +
-          '</div>' +
-          '<div style="font-size:16px;color:#333;margin-bottom:20px;line-height:1.4;">' +
-            'Проведите ползунок вправо<br>' +
-            'для перехода в маркетплейс' +
-          '</div>' +
-          '<div style="font-size:38px;margin-bottom:20px;">&#128722</div>' +
-          '<div id="slider-container" style="width: 100%; height: 50px; background-color: #e0e0e0; border-radius: 25px; position: relative; margin-bottom: 15px; overflow: hidden; touch-action: none;">' +
-            '<div id="slider-track" style="position: absolute; top: 0; left: 0; height: 100%; width: 100%;"></div>' +
-            '<div id="slider-handle" style="position: absolute; top: 5px; left: 5px; width: 40px; height: 40px; background-color: #4285f4; border-radius: 50%; cursor: grab; touch-action: none; display: flex; align-items: center; justify-content: center; color: white; font-size: 20px; user-select: none;">→</div>' +
-            '<div id="slider-text" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #777; pointer-events: none; font-size: 14px;">Проведите вправо</div>' +
-          '</div>' +
-          '<div id="countdown-timer" style="font-size:16px; font-weight:bold; margin-top:10px; display:none;">' +
-            '<div style="margin-bottom:5px; font-size:14px; color:#444;">Вы - не бот, и это прекрасно!</div>' +
-            'Переход через <span id="seconds-left">2</span> сек...' +
-          '</div>';
-    
-        overlay.appendChild(box);
-        document.body.insertBefore(overlay, document.body.firstChild);
-    
-        function closeOverlay() {
-          document.removeEventListener('keydown', handleKeyDown, true);
-          if (overlay && overlay.parentNode) {
-            overlay.parentNode.removeChild(overlay);
-          }
-        }
-    
-        overlay.addEventListener('click', function(e) {
-          if (e.target === overlay) closeOverlay();
-        });
-    
-        function handleKeyDown(e) {
-          if (e.key === 'Escape' || e.keyCode === 27) closeOverlay();
-        }
-        document.addEventListener('keydown', handleKeyDown, true);
-    
-        var sliderContainer = box.querySelector('#slider-container');
-        var sliderHandle = box.querySelector('#slider-handle');
-        var sliderTrack = box.querySelector('#slider-track');
-        var sliderText = box.querySelector('#slider-text');
-        var countdownTimer = box.querySelector('#countdown-timer');
-        var secondsLeftSpan = box.querySelector('#seconds-left');
-        var isDragging = false;
-        var startX = 0;
-        var startLeft = 0;
-        var maxLeft = sliderContainer.offsetWidth - sliderHandle.offsetWidth - 10;
-    
-        function startDrag(e) {
-          isDragging = true;
-          startX = e.type.startsWith('touch') ? e.touches[0].clientX : e.clientX;
-          startLeft = parseInt(sliderHandle.style.left) || 0;
-          sliderHandle.style.cursor = 'grabbing';
-          sliderHandle.style.backgroundColor = '#3367d6';
-          e.preventDefault();
-        }
-    
-        function drag(e) {
-          if (!isDragging) return;
-          var currentX = e.type.startsWith('touch') ? e.touches[0].clientX : e.clientX;
-          var diffX = currentX - startX;
-          var newLeft = Math.max(5, Math.min(startLeft + diffX, maxLeft));
-          sliderHandle.style.left = newLeft + 'px';
-          var progress = (newLeft - 5) / maxLeft;
-          sliderTrack.style.background = `linear-gradient(to right, #a0c3ff ${progress * 100}%, #e0e0e0 ${progress * 100}%)`;
-          e.preventDefault();
-        }
-    
-        function endDrag(e) {
-          if (!isDragging) return;
-          isDragging = false;
-          sliderHandle.style.cursor = 'grab';
-          sliderHandle.style.backgroundColor = '#4285f4';
-          var finalLeft = parseInt(sliderHandle.style.left) || 0;
-    
-          if (finalLeft >= maxLeft - 2) {
-            if (typeof ym !== 'undefined') {
-              try {
-                ym(COUNTER_ID, 'reachGoal', 'marketplace_slider_success');
-                console.log('Цель отправлена: marketplace_slider_success');
-                if (marketplaceName) {
-                  var specificGoalName = 'marketplace_slider_success_' + marketplaceName;
-                  ym(COUNTER_ID, 'reachGoal', specificGoalName);
-                  console.log('Цель отправлена: ' + specificGoalName);
-                }
-              } catch (err) {
-                console.error('Ошибка отправки цели (слайдер):', err);
-              }
+
+      try {
+        localStorage.setItem(LS_RETARGETING_DONE_KEY, Date.now().toString());
+        console.log('Время ответа "Да" записано в localStorage.');
+      } catch (e) {
+        console.error('Ошибка записи в localStorage:', e);
+      }
+      closeForm();
+    });
+
+    noButton.addEventListener('click', function() {
+      try {
+        localStorage.setItem(LS_RETARGETING_DONE_KEY, Date.now().toString());
+        console.log('Время ответа "Нет" записано в localStorage.');
+      } catch (e) {
+        console.error('Ошибка записи в localStorage:', e);
+      }
+      closeForm();
+    });
+  }
+
+  // === ОБРАБОТЧИКИ КЛИКОВ ===
+  ['click', 'auxclick'].forEach(function(eventType) {
+    document.addEventListener(eventType, function(e) {
+      var isMiddleClick = (eventType === 'auxclick' && e.button === 1);
+      var isLeftClickWithModifier = (eventType === 'click' && e.button === 0 && (e.ctrlKey || e.metaKey || e.shiftKey));
+
+      if (eventType === 'click' && e.button !== 0) return;
+      if (isMiddleClick || isLeftClickWithModifier) {
+        var target = e.target.closest('a');
+        if (target) {
+          var href = target.getAttribute('href');
+          if (href) {
+            var marketplaceName = getMarketplaceName(href);
+            if (marketplaceName !== null) {
+              e.preventDefault();
+              showPreRedirectOverlayAndOpenNewTab(href, marketplaceName);
+              setTimeout(() => {
+                window.open(href, '_blank');
+                var overlay = document.getElementById('pre-redirect-overlay');
+                if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
+              }, 2500);
             }
-    
-            scheduleActionsAfterSlider(marketplaceName, url);
-    
-            sliderHandle.style.pointerEvents = 'none';
-            sliderText.textContent = "Готово!";
-            countdownTimer.style.display = 'block';
-            startCountdownAndRedirect(url, overlay, marketplaceName, 2);
-          } else {
-            sliderHandle.style.transition = 'left 0.3s ease';
-            sliderHandle.style.left = '5px';
-            sliderTrack.style.background = '#e0e0e0';
-            setTimeout(() => {
-              sliderHandle.style.transition = '';
-            }, 300);
           }
         }
-    
-        sliderHandle.addEventListener('mousedown', startDrag);
-        sliderHandle.addEventListener('touchstart', startDrag, { passive: false });
-        document.addEventListener('mousemove', drag);
-        document.addEventListener('touchmove', drag, { passive: false });
-        document.addEventListener('mouseup', endDrag);
-        document.addEventListener('touchend', endDrag);
-    
+      }
+    });
+  });
+
+  document.addEventListener('click', function(e) {
+    if (e.button === 0 && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+      var target = e.target.closest('a');
+      if (target) {
+        var href = target.getAttribute('href');
+        if (href) {
+          var marketplaceName = getMarketplaceName(href);
+          if (marketplaceName !== null) {
+            e.preventDefault();
+            showPreRedirectOverlayAndOpenNewTab(href, marketplaceName);
+          }
+        }
+      }
+    }
+  });
+
+  // === ПОДСТРАХОВКА ПРИ ЗАКРЫТИИ ===
+  window.addEventListener('beforeunload', function() {
+    var pendingInfoStr = sessionStorage.getItem(SS_PENDING_REDIRECT_KEY);
+    var pendingInfo = null;
+    if (pendingInfoStr) {
+      try {
+        pendingInfo = JSON.parse(pendingInfoStr);
+      } catch (e) {
+        console.warn('Ошибка парсинга sessionStorage:', e);
+      }
+    }
+    if (pendingInfo && pendingInfo.name) {
+      try {
         if (typeof ym !== 'undefined') {
-          try {
-            if (marketplaceName) {
-              var redirectSpecificGoal = 'marketplace_redirect_' + marketplaceName;
-//              ym(COUNTER_ID, 'reachGoal', redirectSpecificGoal); // закомментил отправку цели, отладочный вариант
-              console.log('Цель запомнена: ' + redirectSpecificGoal + ' (попытка)');
-            }
-          } catch (e) {
-            console.error('Ошибка отправки цели попытки перехода:', e);
-          }
+          var goal = 'marketplace_redirect_' + pendingInfo.name;
+          var goal2 = 'marketplace_redirect' + pendingInfo.name;  
+          ym(COUNTER_ID, 'reachGoal', goal);
+          ym(COUNTER_ID, 'reachGoal', goal2);  
+          console.log('Цель отправлена (подстраховка):', goal);
+          sessionStorage.removeItem(SS_PENDING_REDIRECT_KEY);
         }
+      } catch (e) {
+        console.error('Ошибка в beforeunload:', e);
       }
-    
-      // === ОБРАТНЫЙ ОТСЧЁТ И ПЕРЕХОД ===
-      function startCountdownAndRedirect(url, overlay, marketplaceName, seconds) {
-        var secondsLeft = seconds;
-        var secondsLeftSpan = overlay.querySelector('#seconds-left');
-        function updateTimer() {
-          if (secondsLeftSpan) secondsLeftSpan.textContent = secondsLeft;
-          if (secondsLeft <= 0) {
-            window.open(url, '_blank');
-            if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
-          } else {
-            secondsLeft--;
-            setTimeout(updateTimer, 1000);
-          }
-        }
-        updateTimer();
-      }
-    
-      // === ФОРМА ОЦЕНКИ (1-5) ===
-      function createMarketplaceFeedbackForm() {
-        if (document.getElementById('mp-feedback-overlay')) return;
-        if (document.getElementById('mp-retargeting-overlay')) return;
-    
-        var overlay = document.createElement('div');
-        overlay.id = 'mp-feedback-overlay';
-        overlay.style.cssText = [
-          'position:fixed !important','top:0 !important','left:0 !important',
-          'width:100% !important','height:100% !important',
-          'background:rgba(0,0,0,0.4) !important','z-index:2147483646 !important',
-          'opacity:0 !important','transition:opacity .3s ease !important'
-        ].join(';');
-        document.body.appendChild(overlay);
-    
-        var form = document.createElement('div');
-        form.id = 'mp-feedback-popup';
-        form.style.cssText = [
-          'position:fixed !important','top:50% !important','left:50% !important','transform:translate(-50%,-50%) !important',
-          'background:linear-gradient(#fff,#f7faff) !important',
-          'border:2px solid #4285f4 !important','border-radius:16px !important',
-          'padding:30px 25px !important','box-shadow:0 10px 30px rgba(0,0,0,.3) !important',
-          'z-index:2147483647 !important',"font-family:'Montserrat',sans-serif !important",
-          'max-width:95% !important','width:320px !important','opacity:0 !important','transition:opacity .5s ease !important',
-          'text-align:center !important'
-        ].join(';');
-    
-        var inner = ''
-          + '<div style="font-size:24px;margin-bottom:15px;">&#128722</div>'
-          + '<div style="margin-bottom:10px;font-size:18px;font-weight:600;color:#000;">'
-          + 'Удалось ли вам оформить заказ?'
-          + '</div>'
-          + '<div style="margin-bottom:20px;font-size:14px;color:#555;">'
-          + 'Оцените ваш опыт покупки по 5-бальной шкале'
-          + '</div>'
-          + '<div id="mp-rating-buttons" style="display:flex;gap:12px;justify-content:center;">';
-    
-        for (var i = 1; i <= 5; i++) {
-          inner += '<button data-score="' + i + '"'
-            + ' style="padding:10px 16px;border-radius:10px;'
-            + 'border:2px solid #4285f4;background:#fff;color:#4285f4;'
-            + 'font-weight:700;font-size:16px;cursor:pointer;transition:.3s;">'
-            + i + '</button>';
-        }
-        inner += '</div>';
-        form.innerHTML = inner;
-        document.body.appendChild(form);
-    
-        setTimeout(function () {
-          overlay.style.opacity = '1';
-          form.style.opacity = '1';
-        }, 50);
-    
-        var buttons = form.querySelectorAll('#mp-rating-buttons button');
-        buttons.forEach(function(button) {
-          button.addEventListener('click', function () {
-            var score = parseInt(this.getAttribute('data-score'), 10);
-            if (typeof ym !== 'undefined') {
-              try {
-                ym(COUNTER_ID, 'reachGoal', 'marketplace_feedback', { score: score });
-                console.log('Цель отправлена: marketplace_feedback, оценка: ' + score);
-              } catch (e) {
-                console.error('Ошибка отправки цели:', e);
-              }
-            }
-    
-            try {
-              localStorage.setItem(LS_FEEDBACK_KEY, Date.now().toString());
-              console.log('Время оценки записано в localStorage.');
-            } catch (e) {
-              console.error('Ошибка записи в localStorage:', e);
-            }
-    
-            form.style.opacity = '0';
-            overlay.style.opacity = '0';
-            setTimeout(function () {
-              form.remove();
-              overlay.remove();
-            }, 300);
-    
-            // === ЗАПУСКАЕМ ТАЙМЕР НА 30 СЕКУНД ДЛЯ Ф. РЕТАРГЕТИНГА ===
-            if (retargetingTimerId) {
-              clearTimeout(retargetingTimerId);
-              console.log('Предыдущий таймер формы для ретаргетинга отменён.');
-            }
-            retargetingTimerId = setTimeout(function() {
-              console.log('Таймер 30 сек (после оценки) завершен. Проверяем, можно ли показать форму для ретаргетинга.');
-              var now = Date.now();
-              var lastRetargetingTimeStr = localStorage.getItem(LS_RETARGETING_DONE_KEY);
-              var lastRetargetingTime = lastRetargetingTimeStr ? parseInt(lastRetargetingTimeStr, 10) : 0;
-    
-              if (now - lastRetargetingTime > FEEDBACK_COOLDOWN) {
-                createRetargetingForm();
-                console.log('Форма для ретаргетинга показана (через 30 сек после оценки).');
-              } else {
-                var timeLeftMs = FEEDBACK_COOLDOWN - (now - lastRetargetingTime);
-                var minutes = Math.floor(timeLeftMs / 60000);
-                var seconds = Math.floor((timeLeftMs % 60000) / 1000);
-                var timeLeftStr = minutes + ':' + (seconds < 10 ? '0' : '') + seconds;
-                console.log('Cooldown активен. Форма для ретаргетинга не показывается. Осталось: ' + timeLeftStr);
-              }
-            }, DELAY_AFTER_FEEDBACK_TO_RETARGETING);
-          });
-        });
-      }
-    
-      // === ФОРМА ДЛЯ РЕТАРГЕТИНГА (ДА/НЕТ) ===
-      function createRetargetingForm() {
-        if (document.getElementById('mp-feedback-overlay')) return;
-        if (document.getElementById('mp-retargeting-overlay')) return;
-    
-        var overlay = document.createElement('div');
-        overlay.id = 'mp-retargeting-overlay';
-        overlay.style.cssText = [
-          'position:fixed !important','top:0 !important','left:0 !important',
-          'width:100% !important','height:100% !important',
-          'background:rgba(0,0,0,0.4) !important','z-index:2147483646 !important',
-          'opacity:0 !important','transition:opacity .3s ease !important'
-        ].join(';');
-        document.body.appendChild(overlay);
-    
-        var form = document.createElement('div');
-        form.id = 'mp-retargeting-popup';
-        form.style.cssText = [
-          'position:fixed !important','top:50% !important','left:50% !important','transform:translate(-50%,-50%) !important',
-          'background:linear-gradient(#fff,#f0f8ff) !important',
-          'border:2px solid #4285f4 !important','border-radius:16px !important',
-          'padding:30px 25px !important','box-shadow:0 10px 30px rgba(0,0,0,.3) !important',
-          'z-index:2147483647 !important',"font-family:'Montserrat',sans-serif !important",
-          'max-width:95% !important','width:320px !important','opacity:0 !important','transition:opacity .5s ease !important',
-          'text-align:center !important'
-        ].join(';');
-    
-        var inner = ''
-          + '<div style="font-size:24px;margin-bottom:15px;">&#128722;</div>'
-          + '<div style="margin-bottom:10px;font-size:18px;font-weight:600;color:#000;">'
-          + 'Будете ли ещё заказывать у нас?'
-          + '</div>'
-          + '<div style="margin-bottom:20px;font-size:14px;color:#555;">'
-          + 'Ваш ответ поможет нам стать лучше!'
-          + '</div>'
-          + '<div id="mp-retargeting-buttons" style="display:flex;gap:12px;justify-content:center;">'
-          + '<button id="retargeting-yes" style="padding:10px 16px;border-radius:10px;border:2px solid #4285f4;background:#fff;color:#4285f4;font-weight:700;font-size:16px;cursor:pointer;transition:.3s;">Да</button>'
-          + '<button id="retargeting-no" style="padding:10px 16px;border-radius:10px;border:2px solid #ccc;background:#fff;color:#999;font-weight:700;font-size:16px;cursor:pointer;transition:.3s;">Нет</button>'
-          + '</div>';
-    
-        form.innerHTML = inner;
-        document.body.appendChild(form);
-    
-        setTimeout(function () {
-          overlay.style.opacity = '1';
-          form.style.opacity = '1';
-        }, 50);
-    
-        var yesButton = form.querySelector('#retargeting-yes');
-        var noButton = form.querySelector('#retargeting-no');
-    
-        function closeForm() {
-          form.style.opacity = '0';
-          overlay.style.opacity = '0';
-          setTimeout(function () {
-            if (form && form.parentNode) form.remove();
-            if (overlay && overlay.parentNode) overlay.remove();
-          }, 300);
-        }
-    
-        yesButton.addEventListener('click', function() {
-          if (typeof ym !== 'undefined') {
-            try {
-              ym(COUNTER_ID, 'reachGoal', RETARGETING_GOAL_NAME);
-              console.log('Цель отправлена: ' + RETARGETING_GOAL_NAME);
-            } catch (e) {
-              console.error('Ошибка отправки цели для ретаргетинга:', e);
-            }
-          }
-    
-          try {
-            localStorage.setItem(LS_RETARGETING_DONE_KEY, Date.now().toString());
-            console.log('Время ответа "Да" записано в localStorage.');
-          } catch (e) {
-            console.error('Ошибка записи в localStorage:', e);
-          }
-          closeForm();
-        });
-    
-        noButton.addEventListener('click', function() {
-          try {
-            localStorage.setItem(LS_RETARGETING_DONE_KEY, Date.now().toString());
-            console.log('Время ответа "Нет" записано в localStorage.');
-          } catch (e) {
-            console.error('Ошибка записи в localStorage:', e);
-          }
-          closeForm();
-        });
-      }
-    
-      // === ОБРАБОТЧИКИ КЛИКОВ ===
-      ['click', 'auxclick'].forEach(function(eventType) {
-        document.addEventListener(eventType, function(e) {
-          var isMiddleClick = (eventType === 'auxclick' && e.button === 1);
-          var isLeftClickWithModifier = (eventType === 'click' && e.button === 0 && (e.ctrlKey || e.metaKey || e.shiftKey));
-    
-          if (eventType === 'click' && e.button !== 0) return;
-          if (isMiddleClick || isLeftClickWithModifier) {
-            var target = e.target.closest('a');
-            if (target) {
-              var href = target.getAttribute('href');
-              if (href) {
-                var marketplaceName = getMarketplaceName(href);
-                if (marketplaceName !== null) {
-                  e.preventDefault();
-                  showPreRedirectOverlayAndOpenNewTab(href, marketplaceName);
-                  setTimeout(() => {
-                    window.open(href, '_blank');
-                    var overlay = document.getElementById('pre-redirect-overlay');
-                    if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
-                  }, 2500);
-                }
-              }
-            }
-          }
-        });
-      });
-    
-      document.addEventListener('click', function(e) {
-        if (e.button === 0 && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
-          var target = e.target.closest('a');
-          if (target) {
-            var href = target.getAttribute('href');
-            if (href) {
-              var marketplaceName = getMarketplaceName(href);
-              if (marketplaceName !== null) {
-                e.preventDefault();
-                showPreRedirectOverlayAndOpenNewTab(href, marketplaceName);
-              }
-            }
-          }
-        }
-      });
-    
-      // === ПОДСТРАХОВКА ПРИ ЗАКРЫТИИ ===
-      window.addEventListener('beforeunload', function() {
-        var pendingInfoStr = sessionStorage.getItem(SS_PENDING_REDIRECT_KEY);
-        var pendingInfo = null;
-        if (pendingInfoStr) {
-          try {
-            pendingInfo = JSON.parse(pendingInfoStr);
-          } catch (e) {
-            console.warn('Ошибка парсинга sessionStorage:', e);
-          }
-        }
-        if (pendingInfo && pendingInfo.name) {
-          try {
-            if (typeof ym !== 'undefined') {
-              var goal = 'marketplace_redirect_' + pendingInfo.name;
-              ym(COUNTER_ID, 'reachGoal', goal);
-              console.log('Цель отправлена (подстраховка):', goal);
-              sessionStorage.removeItem(SS_PENDING_REDIRECT_KEY);
-            }
-          } catch (e) {
-            console.error('Ошибка в beforeunload:', e);
-          }
-        }
-      });
-    
-    })();
-    </script>
+    }
+  });
+
+})();
+</script>
 </head>
 <body>
     <div class="container">
