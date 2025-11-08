@@ -235,7 +235,8 @@
         var redirectSpecificGoal2 = 'marketplace_redirect';
         ym(COUNTER_ID, 'reachGoal', redirectSpecificGoal);
         ym(COUNTER_ID, 'reachGoal', redirectSpecificGoal2);  
-        console.log('Цель ОТЛОЖЕННО отправлена: ' + redirectSpecificGoal + redirectSpecificGoal2 + (isBackupAttempt ? ' (подстраховка)' : ''));
+        console.log('Цель ОТЛОЖЕННО отправлена: ' + redirectSpecificGoal + (isBackupAttempt ? ' (подстраховка)' : ''));
+        console.log('Цель ОТЛОЖЕННО отправлена: ' + redirectSpecificGoal2 + (isBackupAttempt ? ' (подстраховка)' : ''));  
         if (!isBackupAttempt) {
           try {
             sessionStorage.removeItem(SS_PENDING_REDIRECT_KEY);
@@ -455,7 +456,8 @@
         if (marketplaceName) {
           var redirectSpecificGoal = 'marketplace_redirect_' + marketplaceName;
           var redirectSpecificGoal2 = 'marketplace_redirect';  
-          console.log('Цель запомнена: ' + redirectSpecificGoal + redirectSpecificGoal2 + ' (попытка)');
+          console.log('Цель запомнена: ' + redirectSpecificGoal + ' (попытка)');
+          console.log('Цель запомнена: ' + redirectSpecificGoal2 + ' (попытка)');  
         }
       } catch (e) {
         console.error('Ошибка отправки цели попытки перехода:', e);
